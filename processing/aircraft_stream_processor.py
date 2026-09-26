@@ -16,14 +16,39 @@ import json
 import logging
 import os
 import signal
-import sys
 import time
+from dotenv import load_dotenv
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 import psycopg2
-from psycopg2.extras import Json
+from psycopg2.extras import Json, RealDictCursor
 from confluent_kafka import Consumer, KafkaException
+
+from ingestion.postgres_loader import (
+    get_region_id,
+    upsert_aircraft_dimension,
+    insert_aircraft_position,
+)
+
+
+# ---------------------------------------------------------------------
+# Project root
+# ---------------------------------------------------------------------
+
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(
+        os.path.abspath(__file__)
+    )
+)
+
+
+load_dotenv(
+    os.path.join(
+        PROJECT_ROOT,
+        ".env"
+    )
+)
 
 
 # ---------------------------------------------------------------------
@@ -49,7 +74,7 @@ KAFKA_BROKER = os.getenv(
 )
 
 KAFKA_TOPIC = os.getenv(
-    "AIRCRAFT_TOPIC",
+    "KAFKA_TOPIC",
     "aircraft-observations",
 )
 
@@ -66,7 +91,7 @@ POSTGRES_HOST = os.getenv(
 POSTGRES_PORT = int(
     os.getenv(
         "POSTGRES_PORT",
-        "5432",
+        "5433",
     )
 )
 
@@ -116,6 +141,9 @@ previous_aircraft_state: Dict[str, Dict[str, Any]] = {}
 # Stores the latest time an event was generated for an aircraft/event type.
 last_event_time: Dict[str, float] = {}
 
+# Tracks the pipeline run currently being processed.
+current_run_id: Optional[str] = None
+
 
 # ---------------------------------------------------------------------
 # Signal handling
@@ -127,7 +155,10 @@ def handle_shutdown(signum, frame):
     """
     global running
 
-    logger.info("Shutdown signal received. Stopping processor...")
+    logger.info(
+        "Shutdown signal received. Stopping processor..."
+    )
+
     running = False
 
 
@@ -139,7 +170,9 @@ signal.signal(signal.SIGTERM, handle_shutdown)
 # Utility functions
 # ---------------------------------------------------------------------
 
-def parse_observed_at(value: Optional[str]) -> datetime:
+def parse_observed_at(
+    value: Optional[str],
+) -> datetime:
     """
     Convert an ISO timestamp into a timezone-aware datetime.
 
@@ -151,23 +184,30 @@ def parse_observed_at(value: Optional[str]) -> datetime:
         return datetime.now(timezone.utc)
 
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        )
 
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
+            parsed = parsed.replace(
+                tzinfo=timezone.utc
+            )
 
         return parsed
 
     except ValueError:
         logger.warning(
-            "Invalid observed_at value '%s'. Using current UTC time.",
+            "Invalid observed_at value '%s'. "
+            "Using current UTC time.",
             value,
         )
 
         return datetime.now(timezone.utc)
 
 
-def safe_float(value: Any) -> Optional[float]:
+def safe_float(
+    value: Any,
+) -> Optional[float]:
     """
     Convert a value to float when possible.
     """
@@ -182,7 +222,9 @@ def safe_float(value: Any) -> Optional[float]:
         return None
 
 
-def safe_int(value: Any) -> Optional[int]:
+def safe_int(
+    value: Any,
+) -> Optional[int]:
     """
     Convert a value to integer when possible.
     """
@@ -197,12 +239,16 @@ def safe_int(value: Any) -> Optional[int]:
         return None
 
 
-def get_aircraft_hex(observation: Dict[str, Any]) -> Optional[str]:
+def get_aircraft_hex(
+    observation: Dict[str, Any],
+) -> Optional[str]:
     """
     Extract the aircraft identifier.
     """
 
-    aircraft_hex = observation.get("aircraft_hex")
+    aircraft_hex = observation.get(
+        "aircraft_hex"
+    )
 
     if not aircraft_hex:
         return None
@@ -239,6 +285,7 @@ def mark_event_created(
     """
 
     key = f"{aircraft_hex}:{event_type}"
+
     last_event_time[key] = time.time()
 
 
@@ -267,7 +314,9 @@ def create_postgres_connection():
 
     connection.autocommit = True
 
-    logger.info("PostgreSQL connection successful.")
+    logger.info(
+        "PostgreSQL connection successful."
+    )
 
     return connection
 
@@ -282,6 +331,7 @@ def insert_event(
     event_description: str,
     source: str,
     event_payload: Dict[str, Any],
+    run_id: str,
 ) -> None:
     """
     Insert a derived event into aviation.fact_aviation_event.
@@ -296,9 +346,11 @@ def insert_event(
             event_value,
             event_description,
             source,
-            event_payload
+            event_payload,
+            run_id
         )
         VALUES (
+            %s,
             %s,
             %s,
             %s,
@@ -322,16 +374,153 @@ def insert_event(
                 event_description,
                 source,
                 Json(event_payload),
+                run_id,
             ),
         )
 
     logger.info(
-        "Generated event: type=%s aircraft=%s region=%s value=%s",
+        "Generated event: run_id=%s type=%s aircraft=%s region=%s value=%s",
+        run_id,
         event_type,
         aircraft_hex,
         region_code,
         event_value,
     )
+
+
+# ---------------------------------------------------------------------
+# Live aircraft position persistence
+# ---------------------------------------------------------------------
+
+def build_loader_aircraft(
+    observation: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Convert the normalized Kafka observation into the field structure
+    expected by ingestion.postgres_loader.
+    """
+
+    return {
+        "hex": observation.get("aircraft_hex"),
+        "flight": observation.get("callsign"),
+        "t": observation.get("aircraft_type"),
+        "r": observation.get("registration"),
+        "lat": observation.get("latitude"),
+        "lon": observation.get("longitude"),
+        "alt_baro": observation.get("altitude_baro"),
+        "alt_geom": observation.get("altitude_geom"),
+        "gs": observation.get("ground_speed"),
+        "track": observation.get("track"),
+        "baro_rate": observation.get("vertical_rate"),
+        "squawk": observation.get("squawk"),
+        "category": observation.get("category"),
+        "emergency": observation.get("emergency_status"),
+        "source": observation.get(
+            "source",
+            "adsb.lol",
+        ),
+    }
+
+
+def persist_aircraft_position(
+    connection,
+    observation: Dict[str, Any],
+    observed_at: datetime,
+    region_code: Optional[str],
+    run_id: str,
+) -> bool:
+    """
+    Persist one live aircraft observation into the aircraft dimension
+    and position fact table.
+    """
+
+    aircraft_hex = get_aircraft_hex(
+        observation
+    )
+
+    if not aircraft_hex:
+        logger.warning(
+            "Skipping position persistence without aircraft_hex."
+        )
+        return False
+
+    if not region_code:
+        logger.warning(
+            "Skipping position persistence for aircraft %s "
+            "because region_code is missing.",
+            aircraft_hex,
+        )
+        return False
+
+    latitude = safe_float(
+        observation.get("latitude")
+    )
+
+    longitude = safe_float(
+        observation.get("longitude")
+    )
+
+    if latitude is None or longitude is None:
+        logger.debug(
+            "Skipping position persistence for aircraft %s "
+            "because latitude or longitude is missing.",
+            aircraft_hex,
+        )
+        return False
+
+    loader_aircraft = build_loader_aircraft(
+        observation
+    )
+
+    try:
+        # Use RealDictCursor consistently with the PostgreSQL loader.
+        # This guarantees RETURNING results can be accessed by column name.
+        with connection.cursor(
+            cursor_factory=RealDictCursor
+        ) as cursor:
+
+            region_id = get_region_id(
+                cursor=cursor,
+                region_code=region_code,
+            )
+
+            aircraft_id = upsert_aircraft_dimension(
+                cursor=cursor,
+                aircraft=loader_aircraft,
+                observed_at=observed_at,
+            )
+
+            if aircraft_id is None:
+                logger.warning(
+                    "Aircraft dimension upsert returned no ID for %s.",
+                    aircraft_hex,
+                )
+                return False
+
+            inserted = insert_aircraft_position(
+                cursor=cursor,
+                aircraft=loader_aircraft,
+                aircraft_id=aircraft_id,
+                region_id=region_id,
+                region_code=region_code,
+                snapshot={
+                    "source": observation.get(
+                        "source",
+                        "adsb.lol",
+                    ),
+                },
+                observed_at=observed_at,
+                run_id=run_id,
+            )
+
+        return inserted
+
+    except Exception:
+        logger.exception(
+            "Failed to persist live position for aircraft %s.",
+            aircraft_hex,
+        )
+        return False
 
 
 # ---------------------------------------------------------------------
@@ -346,7 +535,45 @@ def process_observation(
     Process one aircraft observation and generate derived events.
     """
 
-    aircraft_hex = get_aircraft_hex(observation)
+    global current_run_id
+
+    run_id = observation.get("run_id")
+
+    if not run_id:
+        logger.warning(
+            "Skipping observation without run_id."
+        )
+        return
+
+    run_id = str(run_id).strip()
+
+    if not run_id:
+        logger.warning(
+            "Skipping observation with empty run_id."
+        )
+        return
+
+    if current_run_id != run_id:
+        if current_run_id is not None:
+            logger.info(
+                "New pipeline run detected: %s -> %s. "
+                "Clearing in-memory aircraft state.",
+                current_run_id,
+                run_id,
+            )
+        else:
+            logger.info(
+                "Starting processing for pipeline run: %s",
+                run_id,
+            )
+
+        current_run_id = run_id
+        previous_aircraft_state.clear()
+        last_event_time.clear()
+
+    aircraft_hex = get_aircraft_hex(
+        observation
+    )
 
     if not aircraft_hex:
         logger.warning(
@@ -358,10 +585,14 @@ def process_observation(
         observation.get("observed_at")
     )
 
-    region_code = observation.get("region_code")
+    region_code = observation.get(
+        "region_code"
+    )
 
     if region_code:
-        region_code = str(region_code).strip().lower()
+        region_code = str(
+            region_code
+        ).strip().lower()
 
     current_altitude = safe_float(
         observation.get("altitude_baro")
@@ -387,7 +618,19 @@ def process_observation(
         observation.get("track")
     )
 
+    # Persist every valid live position before calculating derived
+    # events. This keeps fact_aircraft_position synchronized with
+    # the Redpanda stream.
+    persist_aircraft_position(
+        connection=connection,
+        observation=observation,
+        observed_at=observed_at,
+        region_code=region_code,
+        run_id=run_id,
+    )
+
     current_state = {
+        "run_id": run_id,
         "observed_at": observed_at.isoformat(),
         "region_code": region_code,
         "altitude_baro": current_altitude,
@@ -396,9 +639,15 @@ def process_observation(
         "latitude": current_latitude,
         "longitude": current_longitude,
         "track": current_track,
-        "callsign": observation.get("callsign"),
-        "registration": observation.get("registration"),
-        "aircraft_type": observation.get("aircraft_type"),
+        "callsign": observation.get(
+            "callsign"
+        ),
+        "registration": observation.get(
+            "registration"
+        ),
+        "aircraft_type": observation.get(
+            "aircraft_type"
+        ),
     }
 
     previous_state = previous_aircraft_state.get(
@@ -407,7 +656,9 @@ def process_observation(
 
     # First observation for this aircraft.
     if previous_state is None:
-        previous_aircraft_state[aircraft_hex] = current_state
+        previous_aircraft_state[
+            aircraft_hex
+        ] = current_state
 
         logger.info(
             "Registered first observation for aircraft %s.",
@@ -417,11 +668,15 @@ def process_observation(
         return
 
     previous_altitude = safe_float(
-        previous_state.get("altitude_baro")
+        previous_state.get(
+            "altitude_baro"
+        )
     )
 
     previous_speed = safe_float(
-        previous_state.get("ground_speed")
+        previous_state.get(
+            "ground_speed"
+        )
     )
 
     previous_region = previous_state.get(
@@ -460,7 +715,8 @@ def process_observation(
                     "current_region": region_code,
                     "observation": observation,
                 },
-            )
+                run_id=run_id,
+        )
 
             mark_event_created(
                 aircraft_hex,
@@ -476,10 +732,14 @@ def process_observation(
         and current_altitude is not None
     ):
         altitude_difference = (
-            current_altitude - previous_altitude
+            current_altitude
+            - previous_altitude
         )
 
-        if abs(altitude_difference) >= ALTITUDE_CHANGE_THRESHOLD:
+        if (
+            abs(altitude_difference)
+            >= ALTITUDE_CHANGE_THRESHOLD
+        ):
             event_type = "ALTITUDE_CHANGE"
 
             if not event_is_on_cooldown(
@@ -511,7 +771,8 @@ def process_observation(
                         "altitude_difference": altitude_difference,
                         "observation": observation,
                     },
-                )
+                    run_id=run_id,
+            )
 
                 mark_event_created(
                     aircraft_hex,
@@ -527,10 +788,14 @@ def process_observation(
         and current_speed is not None
     ):
         speed_difference = (
-            current_speed - previous_speed
+            current_speed
+            - previous_speed
         )
 
-        if abs(speed_difference) >= SPEED_CHANGE_THRESHOLD:
+        if (
+            abs(speed_difference)
+            >= SPEED_CHANGE_THRESHOLD
+        ):
             event_type = "SPEED_CHANGE"
 
             if not event_is_on_cooldown(
@@ -561,7 +826,8 @@ def process_observation(
                         "speed_difference": speed_difference,
                         "observation": observation,
                     },
-                )
+                    run_id=run_id,
+            )
 
                 mark_event_created(
                     aircraft_hex,
@@ -573,7 +839,11 @@ def process_observation(
     # -------------------------------------------------------------
 
     if current_vertical_rate is not None:
-        if abs(current_vertical_rate) >= VERTICAL_RATE_THRESHOLD:
+
+        if (
+            abs(current_vertical_rate)
+            >= VERTICAL_RATE_THRESHOLD
+        ):
             event_type = "HIGH_VERTICAL_RATE"
 
             if not event_is_on_cooldown(
@@ -603,7 +873,8 @@ def process_observation(
                         "vertical_rate": current_vertical_rate,
                         "observation": observation,
                     },
-                )
+                    run_id=run_id,
+            )
 
                 mark_event_created(
                     aircraft_hex,
@@ -611,7 +882,9 @@ def process_observation(
                 )
 
     # Update state after processing.
-    previous_aircraft_state[aircraft_hex] = current_state
+    previous_aircraft_state[
+        aircraft_hex
+    ] = current_state
 
 
 # ---------------------------------------------------------------------
@@ -630,9 +903,13 @@ def create_kafka_consumer() -> Consumer:
         "enable.auto.commit": True,
     }
 
-    consumer = Consumer(configuration)
+    consumer = Consumer(
+        configuration
+    )
 
-    consumer.subscribe([KAFKA_TOPIC])
+    consumer.subscribe([
+        KAFKA_TOPIC
+    ])
 
     logger.info(
         "Kafka consumer subscribed to topic '%s'.",
@@ -656,7 +933,10 @@ def run_processor() -> None:
     consumer = None
 
     try:
-        postgres_connection = create_postgres_connection()
+        postgres_connection = (
+            create_postgres_connection()
+        )
+
         consumer = create_kafka_consumer()
 
         logger.info(
@@ -664,6 +944,7 @@ def run_processor() -> None:
         )
 
         while running:
+
             message = consumer.poll(
                 timeout=1.0
             )
@@ -689,9 +970,13 @@ def run_processor() -> None:
                     raw_value.decode("utf-8")
                 )
 
-                if not isinstance(observation, dict):
+                if not isinstance(
+                    observation,
+                    dict,
+                ):
                     logger.warning(
-                        "Skipping message because it is not a JSON object."
+                        "Skipping message because it is "
+                        "not a JSON object."
                     )
                     continue
 
@@ -726,14 +1011,17 @@ def run_processor() -> None:
         )
 
     finally:
+
         if consumer is not None:
             consumer.close()
+
             logger.info(
                 "Kafka consumer closed."
             )
 
         if postgres_connection is not None:
             postgres_connection.close()
+
             logger.info(
                 "PostgreSQL connection closed."
             )

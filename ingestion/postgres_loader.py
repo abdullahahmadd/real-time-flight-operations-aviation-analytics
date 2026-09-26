@@ -179,6 +179,30 @@ def get_source(
     return "adsb.lol"
 
 
+def get_cursor_value(
+    result: Any,
+    column_name: str,
+    index: int = 0,
+) -> Any:
+    """
+    Safely retrieve a value from a PostgreSQL query result.
+
+    Supports both:
+        - RealDictCursor results
+        - normal tuple-style cursor results
+
+    This prevents errors such as:
+        TypeError: tuple indices must be integers or slices, not str
+    """
+    if result is None:
+        return None
+
+    if isinstance(result, dict):
+        return result.get(column_name)
+
+    return result[index]
+
+
 # ---------------------------------------------------------------------------
 # PostgreSQL connection
 # ---------------------------------------------------------------------------
@@ -215,6 +239,7 @@ def get_region_id(
     """
     Return the database region_id for a region code.
     """
+
     cursor.execute(
         """
         SELECT region_id
@@ -232,7 +257,18 @@ def get_region_id(
             "in aviation.dim_region"
         )
 
-    return int(result["region_id"])
+    region_id = get_cursor_value(
+        result=result,
+        column_name="region_id",
+        index=0,
+    )
+
+    if region_id is None:
+        raise ValueError(
+            f"Unable to retrieve region_id for region '{region_code}'"
+        )
+
+    return int(region_id)
 
 
 # ---------------------------------------------------------------------------
@@ -253,6 +289,7 @@ def upsert_aircraft_dimension(
         The generated aircraft_id, or None if the aircraft
         has no hex value.
     """
+
     aircraft_hex = clean_aircraft_hex(aircraft)
 
     if aircraft_hex is None:
@@ -310,9 +347,26 @@ def upsert_aircraft_dimension(
     result = cursor.fetchone()
 
     if result is None:
+        logger.error(
+            "Aircraft dimension upsert returned no result for %s",
+            aircraft_hex,
+        )
         return None
 
-    return int(result["aircraft_id"])
+    aircraft_id = get_cursor_value(
+        result=result,
+        column_name="aircraft_id",
+        index=0,
+    )
+
+    if aircraft_id is None:
+        logger.error(
+            "Aircraft dimension upsert returned no aircraft_id for %s",
+            aircraft_hex,
+        )
+        return None
+
+    return int(aircraft_id)
 
 
 # ---------------------------------------------------------------------------
@@ -327,6 +381,7 @@ def insert_aircraft_position(
     region_code: str,
     snapshot: dict[str, Any],
     observed_at: datetime,
+    run_id: str | None = None,
 ) -> bool:
     """
     Insert one aircraft position record into
@@ -336,6 +391,7 @@ def insert_aircraft_position(
         True if a position record was inserted.
         False if the aircraft has no valid latitude or longitude.
     """
+
     latitude = clean_decimal(aircraft.get("lat"))
     longitude = clean_decimal(aircraft.get("lon"))
 
@@ -390,9 +446,11 @@ def insert_aircraft_position(
             category,
             emergency_status,
             source,
-            region_code
+            region_code,
+            run_id
         )
         VALUES (
+            %s,
             %s,
             %s,
             %s,
@@ -432,6 +490,7 @@ def insert_aircraft_position(
             emergency_status,
             source,
             region_code,
+            run_id,
         ),
     )
 
@@ -455,6 +514,7 @@ def load_snapshot_to_postgres(
         positions_inserted
         aircraft_skipped
     """
+
     aircraft_list = snapshot.get("aircraft", [])
 
     if not isinstance(aircraft_list, list):
@@ -565,6 +625,7 @@ def load_region_snapshot(
     """
     Fetch and load one region snapshot.
     """
+
     region_code = str(
         region["region_code"]
     ).strip().lower()
@@ -597,6 +658,7 @@ def main() -> None:
     """
     Load one live snapshot for every configured region.
     """
+
     logger.info(
         "Starting ADSB.lol to PostgreSQL loading process"
     )

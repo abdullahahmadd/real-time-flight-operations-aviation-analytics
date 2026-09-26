@@ -102,7 +102,7 @@ ADSB_BASE_URL = os.getenv(
 # With five regions and a 60-second interval:
 #
 # Riyadh  -> cycle 1
-# Jeddah  -> cycle 2
+# Muscat  -> cycle 2
 # Dammam  -> cycle 3
 # Dubai   -> cycle 4
 # Doha    -> cycle 5
@@ -196,9 +196,9 @@ REGIONS: dict[str, dict[str, Any]] = {
         "longitude": 46.6753,
         "distance": 250,
     },
-    "jeddah": {
-        "latitude": 21.4858,
-        "longitude": 39.1925,
+    "muscat": {
+        "latitude": 23.5880,
+        "longitude": 58.3829,
         "distance": 250,
     },
     "dammam": {
@@ -668,7 +668,8 @@ def fetch_aircraft_snapshot(
 def create_observation(
     aircraft: dict[str, Any],
     region_code: str,
-    snapshot_observed_at: str
+    snapshot_observed_at: str,
+    run_id: str
 ) -> dict[str, Any] | None:
     """
     Convert one ADSB.lol aircraft record into a Redpanda observation.
@@ -716,6 +717,7 @@ def create_observation(
 
     observation = {
         "event_type": "AIRCRAFT_OBSERVATION",
+        "run_id": run_id,
 
         "aircraft_hex": aircraft_hex,
 
@@ -959,7 +961,8 @@ def publish_observation(
 def process_region(
     producer: KafkaProducer,
     region_code: str,
-    region: dict[str, Any]
+    region: dict[str, Any],
+    run_id: str
 ) -> int:
     """
     Fetch one region and publish its aircraft observations.
@@ -1023,7 +1026,8 @@ def process_region(
         observation = create_observation(
             aircraft=aircraft,
             region_code=region_code,
-            snapshot_observed_at=snapshot_observed_at
+            snapshot_observed_at=snapshot_observed_at,
+            run_id=run_id
         )
 
         if observation is None:
@@ -1095,7 +1099,8 @@ def process_region(
 def run_region_cycle(
     producer: KafkaProducer,
     region_code: str,
-    region: dict[str, Any]
+    region: dict[str, Any],
+    run_id: str
 ) -> int:
     """
     Run one collection cycle for one region.
@@ -1110,7 +1115,8 @@ def run_region_cycle(
         total_published = process_region(
             producer=producer,
             region_code=region_code,
-            region=region
+            region=region,
+            run_id=run_id
         )
 
     except Exception:
@@ -1155,6 +1161,18 @@ def main() -> None:
     Only one region is requested during each cycle.
     This significantly reduces ADSB.lol rate-limit problems.
     """
+
+    run_id = (
+        "RUN_"
+        + datetime.now(timezone.utc).strftime(
+            "%Y%m%d_%H%M%S_%f"
+        )
+    )
+
+    logger.info(
+        "Pipeline Run ID: %s",
+        run_id
+    )
 
     logger.info(
         "Starting ADSB.lol to Redpanda producer"
@@ -1213,7 +1231,8 @@ def main() -> None:
             run_region_cycle(
                 producer=producer,
                 region_code=region_code,
-                region=region
+                region=region,
+                run_id=run_id
             )
 
             region_index = (
