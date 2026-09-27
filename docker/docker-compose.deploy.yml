@@ -1,0 +1,98 @@
+services:
+
+  redpanda:
+    image: redpandadata/redpanda:v24.3.9
+    container_name: flight-analytics-redpanda-deploy
+    command:
+      - redpanda
+      - start
+      - --overprovisioned
+      - --smp
+      - "1"
+      - --memory
+      - 1G
+      - --reserve-memory
+      - 0M
+      - --node-id
+      - "0"
+      - --check=false
+      - --kafka-addr
+      - PLAINTEXT://0.0.0.0:9092
+      - --advertise-kafka-addr
+      - PLAINTEXT://redpanda:9092
+      - --pandaproxy-addr
+      - HTTP://0.0.0.0:8082
+      - --advertise-pandaproxy-addr
+      - HTTP://redpanda:8082
+      - --schema-registry-addr
+      - HTTP://0.0.0.0:8081
+      - --rpc-addr
+      - 0.0.0.0:33145
+      - --advertise-rpc-addr
+      - redpanda:33145
+    volumes:
+      - redpanda_deploy_data:/var/lib/redpanda/data
+
+  postgres:
+    image: postgres:16
+    container_name: flight-analytics-postgres-deploy
+    environment:
+      POSTGRES_DB: flight_analytics
+      POSTGRES_USER: flight_analytics
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_deploy_data:/var/lib/postgresql/data
+      - ../database:/docker-entrypoint-initdb.d:ro
+
+  api:
+    image: flight-analytics-app:test
+    container_name: flight-analytics-api-deploy
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: flight_analytics
+      POSTGRES_USER: flight_analytics
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      FRONTEND_URL: ${FRONTEND_URL}
+    depends_on:
+      - postgres
+    ports:
+      - "8000:8000"
+
+  producer:
+    image: flight-analytics-app:test
+    container_name: flight-analytics-producer-deploy
+    environment:
+      REDPANDA_BROKER: redpanda:9092
+      KAFKA_TOPIC: aircraft-observations
+      ADSB_BASE_URL: https://api.adsb.lol
+    depends_on:
+      - redpanda
+    command:
+      - python
+      - -m
+      - streaming.aircraft_producer
+
+  processor:
+    image: flight-analytics-app:test
+    container_name: flight-analytics-processor-deploy
+    environment:
+      REDPANDA_BROKER: redpanda:9092
+      KAFKA_TOPIC: aircraft-observations
+      PROCESSOR_GROUP_ID: aircraft-stream-processor-deploy
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: flight_analytics
+      POSTGRES_USER: flight_analytics
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      - redpanda
+      - postgres
+    command:
+      - python
+      - -m
+      - processing.aircraft_stream_processor
+
+volumes:
+  redpanda_deploy_data:
+  postgres_deploy_data:
