@@ -99,15 +99,16 @@ ADSB_BASE_URL = os.getenv(
 
 # One region is processed during each cycle.
 #
-# With five regions and a 60-second interval:
+# With six regions and a 60-second interval:
 #
 # Riyadh  -> cycle 1
-# Muscat  -> cycle 2
-# Dammam  -> cycle 3
-# Dubai   -> cycle 4
-# Doha    -> cycle 5
+# Jeddah  -> cycle 2
+# Makkah  -> cycle 3
+# Dammam  -> cycle 4
+# Abha    -> cycle 5
+# Madinah -> cycle 6
 #
-# Each region is therefore requested approximately every 5 minutes.
+# Each region is therefore requested approximately every 6 minutes.
 REGION_POLL_INTERVAL_SECONDS = int(
     os.getenv(
         "REGION_POLL_INTERVAL_SECONDS",
@@ -196,11 +197,6 @@ REGIONS: dict[str, dict[str, Any]] = {
         "longitude": 46.6753,
         "distance": 250,
     },
-    "muscat": {
-        "latitude": 23.5880,
-        "longitude": 58.3829,
-        "distance": 250,
-    },
     "dammam": {
         "latitude": 26.4207,
         "longitude": 50.0888,
@@ -216,9 +212,22 @@ REGIONS: dict[str, dict[str, Any]] = {
         "longitude": 51.5310,
         "distance": 250,
     },
+    "muscat": {
+        "latitude": 23.5880,
+        "longitude": 58.3829,
+        "distance": 250,
+    },
+    "manama": {
+        "latitude": 26.2235,
+        "longitude": 50.5876,
+        "distance": 250,
+    },
+    "kuwait_city": {
+        "latitude": 29.3759,
+        "longitude": 47.9774,
+        "distance": 250,
+    },
 }
-
-
 # ---------------------------------------------------------------------
 # Logging configuration
 # ---------------------------------------------------------------------

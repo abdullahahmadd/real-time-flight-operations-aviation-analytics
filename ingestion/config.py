@@ -83,15 +83,6 @@ REGIONS = [
         "endpoint": "/v2/lat/24.7136/lon/46.6753/dist/250",
     },
     {
-        "region_code": "jeddah",
-        "region_name": "Jeddah",
-        "country_code": "SA",
-        "latitude": 21.4858,
-        "longitude": 39.1925,
-        "distance_nm": 250,
-        "endpoint": "/v2/lat/21.4858/lon/39.1925/dist/250",
-    },
-    {
         "region_code": "dammam",
         "region_name": "Dammam",
         "country_code": "SA",
@@ -118,8 +109,34 @@ REGIONS = [
         "distance_nm": 250,
         "endpoint": "/v2/lat/25.2854/lon/51.5310/dist/250",
     },
+    {
+        "region_code": "muscat",
+        "region_name": "Muscat",
+        "country_code": "OM",
+        "latitude": 23.5880,
+        "longitude": 58.3829,
+        "distance_nm": 250,
+        "endpoint": "/v2/lat/23.5880/lon/58.3829/dist/250",
+    },
+    {
+        "region_code": "manama",
+        "region_name": "Manama",
+        "country_code": "BH",
+        "latitude": 26.2235,
+        "longitude": 50.5876,
+        "distance_nm": 250,
+        "endpoint": "/v2/lat/26.2235/lon/50.5876/dist/250",
+    },
+    {
+        "region_code": "kuwait_city",
+        "region_name": "Kuwait City",
+        "country_code": "KW",
+        "latitude": 29.3759,
+        "longitude": 47.9774,
+        "distance_nm": 250,
+        "endpoint": "/v2/lat/29.3759/lon/47.9774/dist/250",
+    },
 ]
-
 
 # ---------------------------------------------------------
 # Helper functions
