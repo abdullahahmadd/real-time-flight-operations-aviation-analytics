@@ -1,4 +1,5 @@
 name: flight-analytics-deploy
+
 services:
 
   redpanda:
@@ -35,6 +36,8 @@ services:
 
   postgres:
     image: postgres:16
+    ports:
+      - "5433:5432"
     environment:
       POSTGRES_DB: flight_analytics
       POSTGRES_USER: flight_analytics
