@@ -642,14 +642,6 @@ git push origin main
 
 ---
 
-## Repository
-
-GitHub repository:
-
-https://github.com/abdullahahmadd/real-time-flight-operations-aviation-analytics
-
----
-
 ## Project Deliverables
 
 The completed project includes:
@@ -670,18 +662,6 @@ The completed project includes:
 - Docker deployment configuration
 - Project documentation
 - Public frontend deployment
-
----
-
-## Author
-
-**Abdullah Ahmad**
-
-Data Analytics | Business Intelligence | Data Engineering | Software Engineering
-
-LinkedIn
-
-GitHub
 
 ---
 
