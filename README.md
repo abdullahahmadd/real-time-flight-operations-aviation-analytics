@@ -1,255 +1,106 @@
 # Real-Time Flight Operations & Aviation Analytics
 
-[![Python](https://img.shields.io/badge/Python-3.14-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
-[![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker&logoColor=white)](https://www.docker.com/)
-[![Power BI](https://img.shields.io/badge/Power%20BI-Analytics-F2C811?logo=powerbi&logoColor=black)](https://powerbi.microsoft.com/)
+![Python](https://img.shields.io/badge/Python-3.14-blue?logo=python&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![FastAPI](https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-Containerized-2496ED?logo=docker&logoColor=white)
+![Power BI](https://img.shields.io/badge/Power%20BI-Analytics-F2C811?logo=powerbi&logoColor=black)
 
-An end-to-end real-time aviation analytics platform that collects live aircraft data, processes streaming observations, stores operational and analytical data, exposes analytics through APIs, and presents live aviation insights through an interactive web application and Power BI dashboards.
+An end-to-end real-time aviation analytics platform that collects live aircraft data, processes streaming observations, stores operational and analytical data, exposes analytics through APIs, and presents live aviation insight through an interactive web application and Power BI dashboards.
+
+**Live Dashboard:** [real-time-flight-operations.netlify.app](https://real-time-flight-operations.netlify.app/)
+
+---
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Business Problem](#business-problem)
+- [Objectives](#objectives)
+- [Technology Stack](#technology-stack)
+- [Methodology - End-to-End Data Flow](#methodology---end-to-end-data-flow)
+- [Architecture](#architecture)
+- [Regional Monitoring Configuration](#regional-monitoring-configuration)
+- [REST API](#rest-api)
+- [Interactive Web Dashboard](#interactive-web-dashboard)
+- [Docker Services](#docker-services)
+- [Getting Started](#getting-started)
+- [Key Performance Indicators](#key-performance-indicators)
+- [Project Structure](#project-structure)
+- [Conclusion](#conclusion)
 
 ---
 
 ## Overview
 
-**Real-Time Flight Operations & Aviation Analytics** is a full-stack data engineering and analytics project built around live aircraft tracking data from **ADSB.lol**.
-
-The project demonstrates the complete journey from live data ingestion to business-facing analytics:
-
-```text
-Live Aircraft Data
-        |
-        v
-    ADSB.lol
-        |
-        v
- Python Data Ingestion
-        |
-        v
-     Redpanda
-        |
-        v
- Stream Processing
-        |
-        v
-   PostgreSQL
-        |
-        +------------------+
-        |                  |
-        v                  v
-     FastAPI           Power BI
-        |
-        v
- React Web Dashboard
-```
-
-The platform continuously collects aircraft observations from defined aviation regions, processes the incoming stream, stores the resulting data in PostgreSQL, and makes the information available through both a web-based analytics application and Power BI.
+Real-Time Flight Operations & Aviation Analytics is a full-stack data engineering and analytics project built around live aircraft tracking data from ADSB.lol. It demonstrates the complete journey from live data ingestion to business-facing analytics: Python ingestion feeds a Redpanda streaming pipeline, a stream processor writes to PostgreSQL, and the resulting operational and analytical data is exposed through both a FastAPI/React web application and Power BI dashboards.
 
 ---
 
-## Project Objectives
+## Business Problem
 
-The project was developed to demonstrate an end-to-end real-time analytics workflow covering:
-
-- Live external data ingestion
-- Real-time event streaming
-- Stream processing
-- Relational database design
-- Analytical SQL views
-- REST API development
-- Interactive data visualization
-- Geographic aircraft monitoring
-- Business intelligence reporting
-- Docker-based application deployment
-- Public web deployment
-- Git and GitHub project management
+Aviation traffic data is inherently real-time and high-volume - useful analytics require continuously ingesting live aircraft positions rather than working from static snapshots. Without a structured pipeline, raw live feeds don't translate into usable operational visibility: there's no persistent record for trend analysis, no API for downstream consumption, and no way to compare regional traffic patterns side by side. This project addresses that gap by building a complete pipeline from live ingestion through to both a self-service web dashboard and a BI reporting layer, covering 7 aviation regions across the Gulf.
 
 ---
 
-## Key Features
+## Objectives
 
-### Live Aircraft Monitoring
-
-The platform continuously retrieves live aircraft observations from ADSB.lol and processes them through the streaming pipeline.
-
-The system provides visibility into:
-
-- Aircraft activity
-- Aircraft positions
-- Regional traffic
-- Aircraft movement
-- Current operational activity
-
-### Regional Aviation Monitoring
-
-The current platform monitors seven aviation regions:
-
-| Region | Country | Monitoring Radius |
-|--------|---------|-------------------|
-| Riyadh | Saudi Arabia | 250 NM |
-| Dammam | Saudi Arabia | 250 NM |
-| Dubai | United Arab Emirates | 250 NM |
-| Doha | Qatar | 250 NM |
-| Muscat | Oman | 250 NM |
-| Manama | Bahrain | 250 NM |
-| Kuwait City | Kuwait | 250 NM |
-
-The regional model uses a geographic point and a 250 nautical mile radius for each monitored area.
-
-Regional results therefore represent aircraft returned by the corresponding geographic query and should not be interpreted as exact administrative city boundaries.
-
-### Real-Time Streaming
-
-Aircraft observations move through a streaming pipeline using Redpanda.
-
-The streaming architecture separates:
-
-- Data collection
-- Message streaming
-- Stream processing
-- Database storage
-
-This allows the platform to continuously process new observations as they arrive.
-
-### Aviation Event Processing
-
-The processing layer analyzes incoming aircraft observations and records aviation events for downstream analytics.
-
-These events are made available through the API and the web dashboard.
-
-### PostgreSQL Analytics Layer
-
-PostgreSQL acts as the central persistent data store.
-
-The database contains operational aviation data together with an analytics layer designed for dashboard and API consumption.
-
-The analytics layer provides prepared datasets for:
-
-- Aircraft analytics
-- Regional traffic
-- Aviation events
-- Traffic trends
-- Current operational activity
-
-### REST API
-
-FastAPI provides the application interface between the PostgreSQL analytics layer and the frontend.
-
-Available endpoints include:
-
-```text
-GET /api/overview
-GET /api/aircraft
-GET /api/aircraft/summary
-GET /api/events
-GET /api/regional
-GET /api/timeseries
-GET /api/database
-```
-
-### Interactive Web Dashboard
-
-The React frontend provides five main analytical areas:
-
-1. **Overview**
-   - Operational KPIs
-   - Current system status
-   - Aircraft activity
-   - Regional activity
-2. **Live Operations**
-   - Live aircraft map
-   - Aircraft positions
-   - Regional distribution
-   - Operational activity
-3. **Regional Traffic**
-   - Regional aircraft activity
-   - Traffic distribution
-   - Regional comparisons
-   - Traffic trends
-4. **Events & Anomalies**
-   - Aviation events
-   - Recent events
-   - Operational event information
-5. **Aircraft Analytics**
-   - Aircraft-level information
-   - Aircraft activity
-   - Operational summaries
-
-### Power BI Analytics
-
-The project also includes a Power BI solution connected to the PostgreSQL analytics layer.
-
-The Power BI dashboards provide an additional business intelligence interface for exploring:
-
-- Aircraft activity
-- Regional traffic
-- Aviation events
-- Operational trends
-- Current aviation data
+- Build a live ingestion layer pulling continuous aircraft observations from an external data source
+- Implement a real-time streaming pipeline (Redpanda) decoupling collection from processing
+- Design a PostgreSQL schema with both operational tables and a dedicated analytics layer for dashboard/API consumption
+- Expose that analytics layer through a REST API (FastAPI) and a Power BI connection simultaneously
+- Deliver an interactive React web dashboard covering live operations, regional traffic, events, and aircraft-level analytics
+- Containerize the full backend stack with Docker for reproducible deployment
 
 ---
 
 ## Technology Stack
 
 | Category | Technology |
-|----------|------------|
+|---|---|
 | Data Source | ADSB.lol |
 | Programming | Python |
 | Streaming | Redpanda |
 | Database | PostgreSQL 16 |
 | Backend API | FastAPI |
-| Frontend | React |
-| Frontend Build | Vite |
-| Visualization | Recharts |
-| Mapping | Leaflet / React Leaflet |
+| Frontend | React, Vite |
+| Visualization | Recharts, Leaflet / React Leaflet |
 | Business Intelligence | Power BI Desktop |
 | Containerization | Docker / Docker Compose |
+| Deployment | Netlify (frontend), Cloudflare Quick Tunnel (temporary API exposure) |
 | Version Control | Git / GitHub |
-| Public Frontend | Netlify |
-| Temporary API Exposure | Cloudflare Quick Tunnel |
 
 ---
 
-## End-to-End Data Flow
+## Methodology - End-to-End Data Flow
 
-The complete project workflow is:
+**1. Live Data Collection**
+The Python ingestion layer requests aircraft snapshots from ADSB.lol for each of the 7 configured monitoring regions.
 
-### 1. Live Data Collection
+**2. Streaming**
+Collected aircraft observations are published to Redpanda for real-time processing, decoupling collection from downstream consumption.
 
-The Python ingestion layer requests aircraft snapshots from ADSB.lol for the configured monitoring regions.
+**3. Stream Processing**
+The processing layer consumes aircraft observations, identifies relevant aviation activity, and prepares records for storage.
 
-### 2. Streaming
+**4. Data Storage**
+Processed aviation data is stored in PostgreSQL, which maintains both operational data and analytical views used by downstream applications.
 
-Collected aircraft observations are published to Redpanda for real-time processing.
+**5. API Layer**
+FastAPI exposes the PostgreSQL analytics layer through 7 REST endpoints.
 
-### 3. Stream Processing
+**6. Web Analytics**
+The React application consumes the API and presents the information through interactive dashboards, charts, maps, and operational views across 5 analytical areas.
 
-The processing layer consumes aircraft observations, processes the incoming stream, identifies relevant aviation activity, and prepares records for storage.
-
-### 4. Data Storage
-
-Processed aviation data is stored in PostgreSQL.
-
-The database maintains operational data and analytical views used by downstream applications.
-
-### 5. API Layer
-
-FastAPI exposes the PostgreSQL analytics layer through REST endpoints.
-
-### 6. Web Analytics
-
-The React application consumes the API and presents the information through interactive dashboards, charts, maps, and operational views.
-
-### 7. Business Intelligence
-
-Power BI connects to the PostgreSQL analytics layer to provide an additional analytical and reporting interface.
+**7. Business Intelligence**
+Power BI connects directly to the PostgreSQL analytics layer, providing a second analytical interface on the same underlying data.
 
 ---
 
 ## Architecture
 
-```text
+```
                          ADSB.lol
                             |
                             v
@@ -276,7 +127,6 @@ Power BI connects to the PostgreSQL analytics layer to provide an additional ana
                   | Analytics Views   |
                   +----+---------+----+
                        |         |
-                       |         |
                        v         v
                 +----------+  +----------+
                 | FastAPI  |  | Power BI |
@@ -289,402 +139,164 @@ Power BI connects to the PostgreSQL analytics layer to provide an additional ana
                 +----------+
 ```
 
+Run tracking distinguishes the active processing session from previous pipeline runs, letting the analytics layer focus dashboard queries on current operational data while preserving full historical data underneath.
+
 ---
 
-## Project Structure
+## Regional Monitoring Configuration
 
-```text
-Real-Time Flight Operations & Aviation Analytics/
-│
-├── backend/
-│   └── main.py
-│
-├── database/
-│   ├── 01_create_schema.sql
-│   ├── 02_add_run_tracking.sql
-│   ├── 03_create_analytics_views.sql
-│   └── 04_seed_muscat.sql
-│
-├── docker/
-│   ├── .env
-│   ├── docker-compose.deploy.yml
-│   └── docker-compose.yml
-│
-├── docs/
-│   ├── architecture/
-│   ├── data-dictionary/
-│   │   ├── postgresql-schema.md
-│   │   ├── raw-event-schema.md
-│   │   └── redpanda-topics.md
-│   └── screenshots/
-│
-├── frontend/
-│   ├── .env
-│   ├── .env.example
-│   ├── .env.local
-│   ├── index.html
-│   ├── package.json
-│   ├── package-lock.json
-│   ├── vite.config.js
-│   └── dist/
-│
-├── ingestion/
-│   ├── __init__.py
-│   ├── adsb_client.py
-│   ├── config.py
-│   └── postgres_loader.py
-│
-├── processing/
-│   └── aircraft_stream_processor.py
-│
-├── streaming/
-│   ├── __init__.py
-│   └── aircraft_producer.py
-│
-├── tests/
-│
-├── powerbi/
-│   └── Real-Time Flight Operations & Aviation Analytics.pbix
-│
-├── Dockerfile
-├── README.md
-├── requirements.txt
-├── .env
-└── .env.example
+| Region | Country | Monitoring Radius |
+|---|---|---|
+| Riyadh | Saudi Arabia | 250 NM |
+| Dammam | Saudi Arabia | 250 NM |
+| Dubai | United Arab Emirates | 250 NM |
+| Doha | Qatar | 250 NM |
+| Muscat | Oman | 250 NM |
+| Manama | Bahrain | 250 NM |
+| Kuwait City | Kuwait | 250 NM |
+
+Each region uses a geographic point and a 250 nautical mile radius. Regional results represent aircraft returned by that geographic query, not exact administrative city boundaries.
+
+---
+
+## REST API
+
+FastAPI provides the interface between the PostgreSQL analytics layer and the frontend, with 7 endpoints:
+
+```
+GET /api/overview
+GET /api/aircraft
+GET /api/aircraft/summary
+GET /api/events
+GET /api/regional
+GET /api/timeseries
+GET /api/database
 ```
 
 ---
 
-## Requirements
+## Interactive Web Dashboard
 
-Before running the project locally, install:
+The React frontend covers 5 analytical areas:
 
-- Python 3.14+
-- Node.js
-- npm
-- Docker Desktop
-- Git
-- Power BI Desktop if Power BI analysis is required
-
-The project is designed to run with Docker for the main backend infrastructure.
-
----
-
-## Getting Started
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/abdullahahmadd/real-time-flight-operations-aviation-analytics.git
-cd real-time-flight-operations-aviation-analytics
-```
-
-### 2. Configure Environment Variables
-
-Create the required environment files using the provided examples.
-
-```text
-.env.example
-docker/.env
-frontend/.env.example
-```
-
-Do not commit passwords, API credentials, or other sensitive configuration values.
-
-### 3. Start the Backend Stack
-
-From the project root:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.deploy.yml up -d
-```
-
-Check the running services:
-
-```bash
-docker compose --env-file docker/.env -f docker/docker-compose.deploy.yml ps
-```
-
-The main services are:
-
-```text
-redpanda
-producer
-postgres
-api
-processor
-```
-
-### 4. Verify the API
-
-The local API is available at:
-
-```text
-http://127.0.0.1:8001
-```
-
-Example endpoints:
-
-```text
-http://127.0.0.1:8001/api/overview
-http://127.0.0.1:8001/api/regional
-http://127.0.0.1:8001/api/aircraft
-http://127.0.0.1:8001/api/events
-```
-
-### 5. Start the Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-The development application runs at:
-
-```text
-http://localhost:5174/
-```
+| Area | Focus |
+|---|---|
+| Overview | Operational KPIs, system status, aircraft/regional activity |
+| Live Operations | Live aircraft map, positions, regional distribution |
+| Regional Traffic | Regional activity, traffic distribution, comparisons, trends |
+| Events & Anomalies | Aviation events, recent events, operational event detail |
+| Aircraft Analytics | Aircraft-level information, activity, operational summaries |
 
 ---
 
 ## Docker Services
 
-The Docker deployment contains the following services:
-
 | Service | Purpose |
-|---------|---------|
+|---|---|
 | redpanda | Real-time event streaming |
 | producer | Live aircraft data ingestion |
 | processor | Stream processing and event generation |
 | postgres | Persistent aviation data storage |
 | api | REST API for analytics |
 
-For local Power BI connectivity, PostgreSQL is exposed through:
-
-```text
-Host: localhost
-Port: 5433
-```
-
-Inside Docker, services communicate with PostgreSQL through:
-
-```text
-postgres:5432
-```
+For local Power BI connectivity, PostgreSQL is exposed on `localhost:5433` (internally, services communicate via `postgres:5432`).
 
 ---
 
-## Frontend Build
+## Getting Started
 
-To create a production build:
+**Requirements:** Python 3.14+, Node.js, npm, Docker Desktop, Git, Power BI Desktop (optional, for BI analysis).
 
+**1. Clone the repository**
 ```bash
-cd frontend
-npm run build
+git clone https://github.com/abdullahahmadd/real-time-flight-operations-aviation-analytics.git
+cd real-time-flight-operations-aviation-analytics
 ```
 
-The production output is generated in:
+**2. Configure environment variables**
+Create the required environment files from the provided examples (`.env.example`, `docker/.env`, `frontend/.env.example`). Do not commit credentials.
 
-```text
-frontend/dist/
-```
-
----
-
-## Power BI
-
-The Power BI file is located at:
-
-```text
-powerbi/Real-Time Flight Operations & Aviation Analytics.pbix
-```
-
-The dashboard connects to the PostgreSQL analytics layer and provides an additional interface for exploring the aviation data.
-
-For local Docker deployment, the PostgreSQL connection uses:
-
-```text
-Server: localhost
-Port: 5433
-```
-
----
-
-## Public Application
-
-The React frontend is deployed publicly through Netlify:
-
-**Live Dashboard:**
-
-https://real-time-flight-operations.netlify.app/
-
-The public dashboard provides access to the project's interactive aviation analytics interface.
-
----
-
-## Temporary API Access
-
-The project can use Cloudflare Quick Tunnel to temporarily expose the local FastAPI service for public access.
-
-Example:
-
+**3. Start the backend stack**
 ```bash
-cloudflared tunnel --url http://127.0.0.1:8001
-```
-
-The generated `trycloudflare.com` address is temporary and depends on the active Quick Tunnel session.
-
-For a permanent production deployment, the API should be hosted on a persistent backend infrastructure rather than relying on a Quick Tunnel.
-
----
-
-## Current Monitoring Configuration
-
-The current system monitors:
-
-```text
-Riyadh
-Dammam
-Dubai
-Doha
-Muscat
-Manama
-Kuwait City
-```
-
-Each region uses a 250 nautical mile radius around its configured geographic center.
-
-The regional monitoring configuration is designed for operational aviation analytics rather than exact city-boundary measurement.
-
----
-
-## Analytics Capabilities
-
-The completed platform supports:
-
-- Live aircraft monitoring
-- Regional traffic analysis
-- Aircraft activity analysis
-- Aviation event monitoring
-- Current operational status
-- Traffic time-series analysis
-- Interactive aircraft mapping
-- PostgreSQL-based analytical reporting
-- REST API access
-- Power BI reporting
-- Real-time web visualization
-
----
-
-## Data and Analytics Layers
-
-The project separates the platform into several logical layers:
-
-```text
-Data Source
-    ↓
-Ingestion
-    ↓
-Streaming
-    ↓
-Processing
-    ↓
-Database
-    ↓
-Analytics
-    ↓
-API / BI
-    ↓
-Visualization
-```
-
-This structure allows the same processed aviation data to support both the React dashboard and Power BI.
-
----
-
-## Run Tracking
-
-The pipeline uses run tracking to distinguish the active processing session from previous pipeline data.
-
-This allows the analytics layer to focus dashboard queries on the current operational run while maintaining the underlying historical data.
-
----
-
-## Development Workflow
-
-Typical development workflow:
-
-```bash
-# Start backend services
 docker compose --env-file docker/.env -f docker/docker-compose.deploy.yml up -d
-
-# Check services
 docker compose --env-file docker/.env -f docker/docker-compose.deploy.yml ps
+```
 
-# Start frontend
+**4. Verify the API**
+API runs at `http://127.0.0.1:8001` (e.g., `/api/overview`, `/api/regional`, `/api/aircraft`, `/api/events`).
+
+**5. Start the frontend**
+```bash
 cd frontend
 npm install
 npm run dev
+```
+Development app runs at `http://localhost:5174/`.
 
-# Build frontend
+**Production build:**
+```bash
 npm run build
 ```
+Output generated in `frontend/dist/`.
 
-For source control:
+---
 
-```bash
-git status
-git add .
-git commit -m "Update aviation analytics project"
-git push origin main
+## Key Performance Indicators
+
+| Metric | Result |
+|---|---|
+| Aviation Regions Monitored | 7 (Gulf region) |
+| Monitoring Radius per Region | 250 NM |
+| REST API Endpoints Exposed | 7 |
+| Dashboard Analytical Areas | 5 |
+| Docker Services Orchestrated | 5 |
+| Analytics Interfaces | 2 (React web dashboard, Power BI) |
+| Pipeline Stages | 7 (ingestion → streaming → processing → storage → API → web → BI) |
+
+---
+
+## Project Structure
+
+```
+real-time-flight-operations-aviation-analytics/
+├── backend/
+│   └── main.py
+├── database/
+│   ├── 01_create_schema.sql
+│   ├── 02_add_run_tracking.sql
+│   ├── 03_create_analytics_views.sql
+│   └── 04_seed_muscat.sql
+├── docker/
+│   ├── docker-compose.deploy.yml
+│   └── docker-compose.yml
+├── docs/
+│   ├── architecture/
+│   ├── data-dictionary/
+│   └── screenshots/
+├── frontend/
+│   ├── index.html
+│   ├── package.json
+│   ├── vite.config.js
+│   └── dist/
+├── ingestion/
+│   ├── adsb_client.py
+│   ├── config.py
+│   └── postgres_loader.py
+├── processing/
+│   └── aircraft_stream_processor.py
+├── streaming/
+│   └── aircraft_producer.py
+├── powerbi/
+│   └── Real-Time Flight Operations & Aviation Analytics.pbix
+├── Dockerfile
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
-## Project Deliverables
+## Conclusion
 
-The completed project includes:
-
-- Real-time aviation data ingestion
-- Seven-region monitoring configuration
-- Redpanda streaming pipeline
-- Python stream processing
-- PostgreSQL operational database
-- PostgreSQL analytics layer
-- FastAPI backend
-- React and Vite frontend
-- Interactive aircraft map
-- Regional traffic analytics
-- Aviation event analytics
-- Aircraft analytics
-- Power BI dashboards
-- Docker deployment configuration
-- Project documentation
-- Public frontend deployment
+This project demonstrates a complete real-time data engineering pipeline - live ingestion, event streaming, stream processing, relational + analytical database design, REST API development, interactive web visualization, and BI reporting - built around a genuinely live external data source rather than a static dataset. Covering 7 Gulf aviation regions through a single PostgreSQL analytics layer feeding both a React dashboard and Power BI shows the same processed data supporting two very different downstream consumers without duplicating the pipeline.
 
 ---
-
-## Project Status
-
-The platform is currently structured as a complete end-to-end real-time aviation analytics solution covering:
-
-```text
-Live Data
-   ↓
-Ingestion
-   ↓
-Streaming
-   ↓
-Processing
-   ↓
-PostgreSQL
-   ↓
-FastAPI
-   ↓
-React Dashboard
-   +
-Power BI
-```
-
-The project demonstrates the integration of data engineering, real-time streaming, database development, API development, business intelligence, and interactive data visualization in a single aviation analytics platform.
