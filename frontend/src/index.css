@@ -9,7 +9,7 @@ body,
 }
 
 html {
-  background: #f3f6f9;
+  background: var(--bg-page, #f3f6f9);
 }
 
 body {

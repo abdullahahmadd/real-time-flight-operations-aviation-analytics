@@ -17,10 +17,15 @@ import {
   YAxis,
   ZAxis,
 } from 'recharts'
+import Header from './Header.jsx'
+import Footer from './Footer.jsx'
+import AircraftMap from './AircraftMap.jsx'
+import AircraftDetailDrawer from './AircraftDetailDrawer.jsx'
 import './App.css'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000'
 const REFRESH_MS = 2000
+const THEME_STORAGE_KEY = 'rtfo-theme'
 
 const navigation = [
   { id: 'overview', label: 'Overview' },
@@ -84,6 +89,16 @@ const eventColors = {
   ALTITUDE_CHANGE: '#3f83b8',
   HIGH_VERTICAL_RATE: '#7c5ce6',
   SPEED_CHANGE: '#149c9c',
+}
+
+// Severity is separate from the category colors above: the charts use
+// eventColors to distinguish event TYPES, while the event log table uses
+// severity to flag which rows are worth a second look.
+const eventSeverity = {
+  REGION_CHANGE: 'info',
+  SPEED_CHANGE: 'info',
+  ALTITUDE_CHANGE: 'notice',
+  HIGH_VERTICAL_RATE: 'danger',
 }
 
 function formatNumber(value) {
@@ -152,6 +167,88 @@ function getAircraftLabel(aircraft) {
   return aircraft?.callsign || aircraft?.registration || aircraft?.aircraft_hex || 'Unknown'
 }
 
+// ---------------------------------------------------------------------------
+// Generic sortable-table helper, shared by every data table below.
+// ---------------------------------------------------------------------------
+
+function useSortableData(items, initialSortKey, initialDirection = 'desc') {
+  const [sortKey, setSortKey] = useState(initialSortKey)
+  const [direction, setDirection] = useState(initialDirection)
+
+  const sorted = useMemo(() => {
+    if (!sortKey) return items
+
+    return [...items].sort((a, b) => {
+      const rawA = a?.[sortKey]
+      const rawB = b?.[sortKey]
+
+      if (rawA === null || rawA === undefined) return 1
+      if (rawB === null || rawB === undefined) return -1
+
+      if (typeof rawA === 'string') {
+        return direction === 'asc'
+          ? rawA.localeCompare(rawB)
+          : rawB.localeCompare(rawA)
+      }
+
+      return direction === 'asc' ? rawA - rawB : rawB - rawA
+    })
+  }, [items, sortKey, direction])
+
+  const toggleSort = (key) => {
+    if (key === sortKey) {
+      setDirection((current) => (current === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortKey(key)
+      setDirection('desc')
+    }
+  }
+
+  return { sorted, sortKey, direction, toggleSort }
+}
+
+function SortableTh({ label, sortKeyName, sortKey, direction, onSort }) {
+  const active = sortKeyName === sortKey
+
+  return (
+    <th
+      className={active ? 'sortable active' : 'sortable'}
+      onClick={() => onSort(sortKeyName)}
+    >
+      {label}
+      <span className="sort-arrow">
+        {active ? (direction === 'asc' ? '▲' : '▼') : ''}
+      </span>
+    </th>
+  )
+}
+
+function TableSearchInput({ value, onChange, placeholder }) {
+  return (
+    <div className="table-search">
+      <span className="table-search-icon" aria-hidden="true">
+        ⌕
+      </span>
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+      />
+      {value && (
+        <button
+          type="button"
+          className="table-search-clear"
+          onClick={() => onChange('')}
+          aria-label="Clear search"
+        >
+          ×
+        </button>
+      )}
+    </div>
+  )
+}
+
 function App() {
   const [activeSection, setActiveSection] = useState('overview')
   const [overview, setOverview] = useState(emptyOverview)
@@ -163,6 +260,21 @@ function App() {
   const [lastUpdated, setLastUpdated] = useState(null)
   const [apiOnline, setApiOnline] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [selectedAircraft, setSelectedAircraft] = useState(null)
+
+  const [theme, setTheme] = useState(() => {
+    if (typeof window === 'undefined') return 'light'
+    return window.localStorage.getItem(THEME_STORAGE_KEY) || 'light'
+  })
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    window.localStorage.setItem(THEME_STORAGE_KEY, theme)
+  }, [theme])
+
+  const toggleTheme = () => {
+    setTheme((current) => (current === 'dark' ? 'light' : 'dark'))
+  }
 
   useEffect(() => {
     let mounted = true
@@ -328,52 +440,14 @@ function App() {
 
   return (
     <div className="app">
-      <header className="site-header">
-        <div className="header-inner">
-          <button
-            className="brand"
-            type="button"
-            onClick={() => handleNavigation('overview')}
-          >
-            <div className="brand-mark" aria-hidden="true">
-              <span className="brand-plane">✈</span>
-            </div>
-
-            <div className="brand-text">
-              <strong>Real-Time Flight Operations</strong>
-              <span>Aviation Analytics Platform</span>
-            </div>
-          </button>
-
-          <nav className="main-navigation" aria-label="Main navigation">
-            {navigation.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                className={
-                  activeSection === item.id
-                    ? 'nav-item active'
-                    : 'nav-item'
-                }
-                onClick={() => handleNavigation(item.id)}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-
-          <div className="live-indicator">
-            <span
-              className={apiOnline ? 'live-dot' : 'live-dot offline'}
-            />
-
-            <div className="live-status-text">
-              <strong>{apiOnline ? 'LIVE' : 'OFFLINE'}</strong>
-              <span>{apiOnline ? 'Live data' : 'Data unavailable'}</span>
-            </div>
-          </div>
-        </div>
-      </header>
+      <Header
+        navigation={navigation}
+        activeSection={activeSection}
+        onNavigate={handleNavigation}
+        apiOnline={apiOnline}
+        theme={theme}
+        onToggleTheme={toggleTheme}
+      />
 
       <main className="main-content">
         <section className="page-header">
@@ -415,6 +489,8 @@ function App() {
             speedDistribution={speedDistribution}
             operationsMetrics={operationsMetrics}
             loading={loading}
+            theme={theme}
+            onSelectAircraft={setSelectedAircraft}
           />
         )}
 
@@ -444,63 +520,17 @@ function App() {
             aircraftTypeDistribution={aircraftTypeDistribution}
             operationsMetrics={operationsMetrics}
             loading={loading}
+            onSelectAircraft={setSelectedAircraft}
           />
         )}
       </main>
 
-      <footer className="site-footer">
-        <div className="footer-inner">
-          <div className="footer-project">
-            <span className="footer-project-name">
-              Real-Time Flight Operations &amp; Aviation Analytics
-            </span>
-          </div>
+      <Footer onNavigate={handleNavigation} />
 
-          <div className="footer-links">
-            <a
-              className="footer-social-link"
-              href="https://www.linkedin.com/in/aabdullah-ahmad/"
-              target="_blank"
-              rel="noreferrer"
-              aria-label="LinkedIn profile"
-              title="LinkedIn"
-            >
-              <svg
-                className="footer-social-icon"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  d="M6.94 8.5H3.56V20h3.38V8.5ZM5.25 3A2.02 2.02 0 0 0 3.2 5.02c0 1.1.9 2 2.02 2 1.12 0 2.03-.9 2.03-2A2.02 2.02 0 0 0 5.25 3ZM20.8 13.41c0-3.47-1.85-5.09-4.31-5.09-1.99 0-2.88 1.1-3.38 1.87V8.5H9.73V20h3.38v-5.7c0-1.5.28-2.95 2.14-2.95 1.83 0 1.85 1.71 1.85 3.05V20h3.38l.32-6.59Z"
-                  fill="currentColor"
-                />
-              </svg>
-              <span>LinkedIn</span>
-            </a>
-
-            <a
-              className="footer-social-link"
-              href="https://github.com/abdullahahmadd"
-              target="_blank"
-              rel="noreferrer"
-              aria-label="GitHub profile"
-              title="GitHub"
-            >
-              <svg
-                className="footer-social-icon"
-                viewBox="0 0 24 24"
-                aria-hidden="true"
-              >
-                <path
-                  d="M12 .7A11.3 11.3 0 0 0 8.42 22.92c.57.1.78-.25.78-.55v-2.14c-3.18.69-3.85-1.34-3.85-1.34-.52-1.32-1.27-1.67-1.27-1.67-1.04-.71.08-.7.08-.7 1.15.08 1.75 1.18 1.75 1.18 1.02 1.75 2.68 1.25 3.33.96.1-.74.4-1.25.73-1.54-2.54-.29-5.21-1.27-5.21-5.65 0-1.25.45-2.27 1.18-3.07-.12-.29-.51-1.45.11-3.02 0 0 .96-.31 3.14 1.17a10.8 10.8 0 0 1 5.72 0c2.18-1.48 3.14-1.17 3.14-1.17.62 1.57.23 2.73.11 3.02.73.8 1.18 1.82 1.18 3.07 0 4.39-2.68 5.35-5.23 5.64.41.36.78 1.07.78 2.16v3.2c0 .3.21.66.79.55A11.3 11.3 0 0 0 12 .7Z"
-                  fill="currentColor"
-                />
-              </svg>
-              <span>GitHub</span>
-            </a>
-          </div>
-        </div>
-      </footer>
+      <AircraftDetailDrawer
+        aircraft={selectedAircraft}
+        onClose={() => setSelectedAircraft(null)}
+      />
     </div>
   )
 }
@@ -616,6 +646,8 @@ function OperationsPage({
   speedDistribution,
   operationsMetrics,
   loading,
+  theme,
+  onSelectAircraft,
 }) {
   return (
     <>
@@ -640,9 +672,13 @@ function OperationsPage({
         <Panel
           eyebrow="LIVE MAP"
           title="Aircraft Operations Map"
-          description="Current ADS-B aircraft positions from the live data feed."
+          description="Current ADS-B aircraft positions from the live data feed. Click a marker for details."
         >
-          <AircraftMap aircraft={aircraftData} />
+          <AircraftMap
+            aircraft={aircraftData}
+            theme={theme}
+            onSelectAircraft={onSelectAircraft}
+          />
         </Panel>
 
         <Panel
@@ -715,9 +751,9 @@ function OperationsPage({
       <Panel
         eyebrow="AIRCRAFT FEED"
         title="Live Aircraft Table"
-        description="Current aircraft records from the live aviation data feed."
+        description="Current aircraft records from the live aviation data feed. Click a row for details."
       >
-        <AircraftTable aircraft={aircraftData} />
+        <AircraftTable aircraft={aircraftData} onSelectAircraft={onSelectAircraft} />
       </Panel>
     </>
   )
@@ -791,8 +827,6 @@ function EventsPage({
   eventDistribution,
   loading,
 }) {
-  const recentEvents = events.slice(0, 40)
-
   return (
     <>
       <section className="kpi-grid">
@@ -838,7 +872,7 @@ function EventsPage({
         <Panel
           eyebrow="EVENT TIMELINE"
           title="Recent Event Activity"
-          description="Recent events ordered by event time."
+          description="Events per minute, most recent 30 minutes of the live session."
         >
           <EventTimeline events={events} />
         </Panel>
@@ -847,9 +881,9 @@ function EventsPage({
       <Panel
         eyebrow="EVENT LOG"
         title="Recent Events"
-        description="Detailed event and anomaly records."
+        description="Detailed event and anomaly records, most urgent highlighted."
       >
-        <EventTable events={recentEvents} />
+        <EventTable events={events} />
       </Panel>
     </>
   )
@@ -862,6 +896,7 @@ function AircraftPage({
   aircraftTypeDistribution,
   operationsMetrics,
   loading,
+  onSelectAircraft,
 }) {
   return (
     <>
@@ -956,9 +991,12 @@ function AircraftPage({
       <Panel
         eyebrow="AIRCRAFT INTELLIGENCE"
         title="Aircraft Analytics Table"
-        description="Aircraft-level activity, registration, type, altitude and speed."
+        description="Aircraft-level activity, registration, type, altitude and speed. Click a row for details."
       >
-        <AircraftAnalyticsTable aircraft={aircraftSummary} />
+        <AircraftAnalyticsTable
+          aircraft={aircraftSummary}
+          onSelectAircraft={onSelectAircraft}
+        />
       </Panel>
     </>
   )
@@ -1017,9 +1055,9 @@ function RegionalBarChart({ data }) {
     <div className="chart-container chart-container-small">
       <ResponsiveContainer width="100%" height={250}>
         <BarChart
-          data={[...data].sort(
-            (a, b) => b.position_count - a.position_count,
-          )}
+  data={[...data].sort(
+    (a, b) => b.unique_aircraft - a.unique_aircraft,
+  )}
           layout="vertical"
           margin={{ top: 4, right: 18, left: 10, bottom: 4 }}
         >
@@ -1033,7 +1071,7 @@ function RegionalBarChart({ data }) {
             width={68}
           />
           <Tooltip content={<RegionalTooltip />} />
-          <Bar dataKey="position_count" radius={[0, 5, 5, 0]}>
+          <Bar dataKey="unique_aircraft" radius={[0, 5, 5, 0]}>
             {data.map((item) => (
               <Cell
                 key={item.region_code}
@@ -1165,6 +1203,10 @@ function RegionalDistributionChart({ data }) {
             innerRadius={62}
             outerRadius={105}
             paddingAngle={2}
+            label={({ name, percent }) =>
+              `${name} ${(percent * 100).toFixed(0)}%`
+            }
+            labelLine={false}
           >
             {chartData.map((item) => (
               <Cell
@@ -1187,6 +1229,11 @@ function RegionalDistributionChart({ data }) {
 }
 
 function RegionalMetricsTable({ data }) {
+  const { sorted, sortKey, direction, toggleSort } = useSortableData(
+    data,
+    'position_count',
+  )
+
   if (!data.length) return <ChartLoadingState />
 
   return (
@@ -1194,112 +1241,80 @@ function RegionalMetricsTable({ data }) {
       <thead>
         <tr>
           <th>Region</th>
-          <th>Positions</th>
-          <th>Aircraft</th>
-          <th>Avg Altitude</th>
-          <th>Avg Speed</th>
-          <th>Max Altitude</th>
-          <th>Max Speed</th>
+          <SortableTh
+            label="Positions"
+            sortKeyName="position_count"
+            sortKey={sortKey}
+            direction={direction}
+            onSort={toggleSort}
+          />
+          <SortableTh
+            label="Aircraft"
+            sortKeyName="unique_aircraft"
+            sortKey={sortKey}
+            direction={direction}
+            onSort={toggleSort}
+          />
+          <SortableTh
+            label="Avg Altitude"
+            sortKeyName="avg_altitude_baro"
+            sortKey={sortKey}
+            direction={direction}
+            onSort={toggleSort}
+          />
+          <SortableTh
+            label="Avg Speed"
+            sortKeyName="avg_ground_speed"
+            sortKey={sortKey}
+            direction={direction}
+            onSort={toggleSort}
+          />
+          <SortableTh
+            label="Max Altitude"
+            sortKeyName="max_altitude_baro"
+            sortKey={sortKey}
+            direction={direction}
+            onSort={toggleSort}
+          />
+          <SortableTh
+            label="Max Speed"
+            sortKeyName="max_ground_speed"
+            sortKey={sortKey}
+            direction={direction}
+            onSort={toggleSort}
+          />
         </tr>
       </thead>
       <tbody>
-        {[...data]
-          .sort((a, b) => b.position_count - a.position_count)
-          .map((item) => (
-            <tr key={item.region_code}>
-              <td>{formatRegionName(item.region_code)}</td>
-              <td>{formatNumber(item.position_count)}</td>
-              <td>{formatNumber(item.unique_aircraft)}</td>
-              <td>
-                {item.avg_altitude_baro === null
-                  ? '—'
-                  : `${formatNumber(Math.round(item.avg_altitude_baro))} ft`}
-              </td>
-              <td>
-                {item.avg_ground_speed === null
-                  ? '—'
-                  : `${formatDecimal(item.avg_ground_speed)} kt`}
-              </td>
-              <td>
-                {item.max_altitude_baro === null
-                  ? '—'
-                  : `${formatNumber(Math.round(item.max_altitude_baro))} ft`}
-              </td>
-              <td>
-                {item.max_ground_speed === null
-                  ? '—'
-                  : `${formatDecimal(item.max_ground_speed)} kt`}
-              </td>
-            </tr>
-          ))}
+        {sorted.map((item) => (
+          <tr key={item.region_code}>
+            <td>{formatRegionName(item.region_code)}</td>
+            <td>{formatNumber(item.position_count)}</td>
+            <td>{formatNumber(item.unique_aircraft)}</td>
+            <td>
+              {item.avg_altitude_baro === null
+                ? '—'
+                : `${formatNumber(Math.round(item.avg_altitude_baro))} ft`}
+            </td>
+            <td>
+              {item.avg_ground_speed === null
+                ? '—'
+                : `${formatDecimal(item.avg_ground_speed)} kt`}
+            </td>
+            <td>
+              {item.max_altitude_baro === null
+                ? '—'
+                : `${formatNumber(Math.round(item.max_altitude_baro))} ft`}
+            </td>
+            <td>
+              {item.max_ground_speed === null
+                ? '—'
+                : `${formatDecimal(item.max_ground_speed)} kt`}
+            </td>
+          </tr>
+        ))}
       </tbody>
     </DataTable>
-  )
-}
-
-function AircraftMap({ aircraft }) {
-  const plotted = aircraft.filter(
-    (item) =>
-      Number.isFinite(Number(item.latitude)) &&
-      Number.isFinite(Number(item.longitude)),
-  )
-
-  if (!plotted.length) return <ChartLoadingState />
-
-  const latitudes = plotted.map((item) => Number(item.latitude))
-  const longitudes = plotted.map((item) => Number(item.longitude))
-
-  const minLat = Math.min(...latitudes)
-  const maxLat = Math.max(...latitudes)
-  const minLon = Math.min(...longitudes)
-  const maxLon = Math.max(...longitudes)
-
-  const latSpan = Math.max(maxLat - minLat, 1)
-  const lonSpan = Math.max(maxLon - minLon, 1)
-
-  const points = plotted.slice(0, 500).map((item) => ({
-    ...item,
-    x: 8 + ((Number(item.longitude) - minLon) / lonSpan) * 84,
-    y: 90 - ((Number(item.latitude) - minLat) / latSpan) * 80,
-  }))
-
-  return (
-    <div className="live-map">
-      <div className="map-label map-label-top">LIVE ADS-B POSITIONS</div>
-
-      <div className="map-grid">
-        {Array.from({ length: 5 }).map((_, index) => (
-          <span className="map-grid-line vertical" key={`v-${index}`} />
-        ))}
-        {Array.from({ length: 5 }).map((_, index) => (
-          <span className="map-grid-line horizontal" key={`h-${index}`} />
-        ))}
-
-        {points.map((aircraft) => (
-          <span
-            key={`${aircraft.aircraft_hex}-${aircraft.observed_at}`}
-            className="aircraft-map-point"
-            style={{
-              left: `${aircraft.x}%`,
-              top: `${aircraft.y}%`,
-            }}
-            title={`${getAircraftLabel(aircraft)} • ${formatRegionName(
-              aircraft.region_code,
-            )}`}
-          />
-        ))}
-
-        <div className="map-center-label">
-          <strong>{formatNumber(points.length)}</strong>
-          <span>aircraft plotted</span>
-        </div>
-      </div>
-
-      <div className="map-footer">
-        <span>Longitude {minLon.toFixed(1)}° to {maxLon.toFixed(1)}°</span>
-        <span>Latitude {minLat.toFixed(1)}° to {maxLat.toFixed(1)}°</span>
-      </div>
-    </div>
   )
 }
 
@@ -1336,98 +1351,242 @@ function DistributionChart({
   )
 }
 
-function AircraftTable({ aircraft }) {
+function AircraftTable({ aircraft, onSelect }) {
+  const [search, setSearch] = useState('')
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return aircraft
+
+    return aircraft.filter((item) => {
+      const haystack = `${item.callsign || ''} ${item.registration || ''} ${
+        item.aircraft_hex || ''
+      }`.toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [aircraft, search])
+
+  const { sorted, sortKey, direction, toggleSort } = useSortableData(
+    filtered,
+    'observed_at',
+  )
+
   if (!aircraft.length) return <ChartLoadingState />
 
   return (
-    <DataTable>
-      <thead>
-        <tr>
-          <th>Callsign</th>
-          <th>Registration</th>
-          <th>Type</th>
-          <th>Region</th>
-          <th>Altitude</th>
-          <th>Speed</th>
-          <th>Vertical Rate</th>
-          <th>Observed</th>
-        </tr>
-      </thead>
-      <tbody>
-        {aircraft.slice(0, 100).map((item) => (
-          <tr key={`${item.aircraft_hex}-${item.observed_at}`}>
-            <td>{item.callsign || item.aircraft_hex}</td>
-            <td>{item.registration || '—'}</td>
-            <td>{item.aircraft_type || '—'}</td>
-            <td>{formatRegionName(item.region_code)}</td>
-            <td>
-              {getAircraftAltitude(item) === null
-                ? '—'
-                : `${formatNumber(Math.round(getAircraftAltitude(item)))} ft`}
-            </td>
-            <td>
-              {getAircraftSpeed(item) === null
-                ? '—'
-                : `${formatDecimal(getAircraftSpeed(item))} kt`}
-            </td>
-            <td>
-              {item.vertical_rate === null ||
-              item.vertical_rate === undefined
-                ? '—'
-                : `${formatNumber(Math.round(item.vertical_rate))} fpm`}
-            </td>
-            <td>{formatDateTime(item.observed_at)}</td>
+    <>
+      <TableSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Search callsign or registration…"
+      />
+
+      <DataTable>
+        <thead>
+          <tr>
+            <SortableTh
+              label="Callsign"
+              sortKeyName="callsign"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <SortableTh
+              label="Registration"
+              sortKeyName="registration"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <th>Type</th>
+            <th>Region</th>
+            <SortableTh
+              label="Altitude"
+              sortKeyName="altitude_baro"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <SortableTh
+              label="Speed"
+              sortKeyName="ground_speed"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <SortableTh
+              label="Vertical Rate"
+              sortKeyName="vertical_rate"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <SortableTh
+              label="Observed"
+              sortKeyName="observed_at"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
           </tr>
-        ))}
-      </tbody>
-    </DataTable>
+        </thead>
+        <tbody>
+          {sorted.length === 0 && (
+            <tr>
+              <td colSpan={8} className="table-empty-row">
+                No aircraft match “{search}”.
+              </td>
+            </tr>
+          )}
+
+          {sorted.slice(0, 100).map((item) => (
+            <tr
+              key={`${item.aircraft_hex}-${item.observed_at}`}
+              className="clickable-row"
+              onClick={() => onSelect?.(item)}
+            >
+              <td>{item.callsign || item.aircraft_hex}</td>
+              <td>{item.registration || '—'}</td>
+              <td>{item.aircraft_type || '—'}</td>
+              <td>{formatRegionName(item.region_code)}</td>
+              <td>
+                {getAircraftAltitude(item) === null
+                  ? '—'
+                  : `${formatNumber(Math.round(getAircraftAltitude(item)))} ft`}
+              </td>
+              <td>
+                {getAircraftSpeed(item) === null
+                  ? '—'
+                  : `${formatDecimal(getAircraftSpeed(item))} kt`}
+              </td>
+              <td>
+                {item.vertical_rate === null ||
+                item.vertical_rate === undefined
+                  ? '—'
+                  : `${formatNumber(Math.round(item.vertical_rate))} fpm`}
+              </td>
+              <td>{formatDateTime(item.observed_at)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+    </>
   )
 }
 
-function AircraftAnalyticsTable({ aircraft }) {
+function AircraftAnalyticsTable({ aircraft, onSelect }) {
+  const [search, setSearch] = useState('')
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return aircraft
+
+    return aircraft.filter((item) => {
+      const haystack = `${item.callsign || ''} ${item.registration || ''} ${
+        item.aircraft_hex || ''
+      }`.toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [aircraft, search])
+
+  const { sorted, sortKey, direction, toggleSort } = useSortableData(
+    filtered,
+    'position_count',
+  )
+
   if (!aircraft.length) return <ChartLoadingState />
 
   return (
-    <DataTable>
-      <thead>
-        <tr>
-          <th>Callsign</th>
-          <th>Registration</th>
-          <th>Type</th>
-          <th>Positions</th>
-          <th>Regions</th>
-          <th>Avg Altitude</th>
-          <th>Avg Speed</th>
-          <th>Max Speed</th>
-        </tr>
-      </thead>
-      <tbody>
-        {aircraft.slice(0, 100).map((item) => (
-          <tr key={item.aircraft_hex}>
-            <td>{item.callsign || item.aircraft_hex}</td>
-            <td>{item.registration || '—'}</td>
-            <td>{item.aircraft_type || '—'}</td>
-            <td>{formatNumber(item.position_count)}</td>
-            <td>{formatNumber(item.regions_observed)}</td>
-            <td>
-              {item.avg_altitude_baro === null
-                ? '—'
-                : `${formatNumber(Math.round(item.avg_altitude_baro))} ft`}
-            </td>
-            <td>
-              {item.avg_ground_speed === null
-                ? '—'
-                : `${formatDecimal(item.avg_ground_speed)} kt`}
-            </td>
-            <td>
-              {item.max_ground_speed === null
-                ? '—'
-                : `${formatDecimal(item.max_ground_speed)} kt`}
-            </td>
+    <>
+      <TableSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Search callsign or registration…"
+      />
+
+      <DataTable>
+        <thead>
+          <tr>
+            <SortableTh
+              label="Callsign"
+              sortKeyName="callsign"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <th>Registration</th>
+            <th>Type</th>
+            <SortableTh
+              label="Positions"
+              sortKeyName="position_count"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <th>Regions</th>
+            <SortableTh
+              label="Avg Altitude"
+              sortKeyName="avg_altitude_baro"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <SortableTh
+              label="Avg Speed"
+              sortKeyName="avg_ground_speed"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <SortableTh
+              label="Max Speed"
+              sortKeyName="max_ground_speed"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
           </tr>
-        ))}
-      </tbody>
-    </DataTable>
+        </thead>
+        <tbody>
+          {sorted.length === 0 && (
+            <tr>
+              <td colSpan={8} className="table-empty-row">
+                No aircraft match “{search}”.
+              </td>
+            </tr>
+          )}
+
+          {sorted.slice(0, 100).map((item) => (
+            <tr
+              key={item.aircraft_hex}
+              className="clickable-row"
+              onClick={() => onSelect?.(item)}
+            >
+              <td>{item.callsign || item.aircraft_hex}</td>
+              <td>{item.registration || '—'}</td>
+              <td>{item.aircraft_type || '—'}</td>
+              <td>{formatNumber(item.position_count)}</td>
+              <td>{formatNumber(item.regions_observed)}</td>
+              <td>
+                {item.avg_altitude_baro === null
+                  ? '—'
+                  : `${formatNumber(Math.round(item.avg_altitude_baro))} ft`}
+              </td>
+              <td>
+                {item.avg_ground_speed === null
+                  ? '—'
+                  : `${formatDecimal(item.avg_ground_speed)} kt`}
+              </td>
+              <td>
+                {item.max_ground_speed === null
+                  ? '—'
+                  : `${formatDecimal(item.max_ground_speed)} kt`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+    </>
   )
 }
 
@@ -1577,6 +1736,9 @@ function EventDistributionChart({ data }) {
   )
 }
 
+// Discrete, timestamped events are now plotted as a bar chart rather than a
+// smoothed line — a line implies interpolation between points, which isn't
+// meaningful for per-minute event counts.
 function EventTimeline({ events }) {
   if (!events.length) return <ChartLoadingState />
 
@@ -1585,7 +1747,7 @@ function EventTimeline({ events }) {
   return (
     <div className="chart-container chart-container-small">
       <ResponsiveContainer width="100%" height={300}>
-        <LineChart
+        <BarChart
           data={timeline}
           margin={{ top: 12, right: 10, left: 0, bottom: 4 }}
         >
@@ -1596,62 +1758,118 @@ function EventTimeline({ events }) {
             tick={{ fontSize: 11 }}
           />
           <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-          <Tooltip
-            labelFormatter={(value) => formatDateTime(value)}
-          />
-          <Line
-            type="monotone"
+          <Tooltip labelFormatter={(value) => formatDateTime(value)} />
+          <Bar
             dataKey="count"
             name="Events"
-            stroke="#087ea4"
-            strokeWidth={2}
-            dot={false}
+            fill="#087ea4"
+            radius={[4, 4, 0, 0]}
           />
-        </LineChart>
+        </BarChart>
       </ResponsiveContainer>
     </div>
   )
 }
 
 function EventTable({ events }) {
+  const [search, setSearch] = useState('')
+
+  const filtered = useMemo(() => {
+    const query = search.trim().toLowerCase()
+    if (!query) return events
+
+    return events.filter((event) => {
+      const haystack = `${event.aircraft_hex || ''} ${
+        event.event_description || ''
+      } ${formatEventType(event.event_type)}`.toLowerCase()
+      return haystack.includes(query)
+    })
+  }, [events, search])
+
+  const { sorted, sortKey, direction, toggleSort } = useSortableData(
+    filtered,
+    'event_time',
+  )
+
   if (!events.length) return <ChartLoadingState />
 
   return (
-    <DataTable>
-      <thead>
-        <tr>
-          <th>Time</th>
-          <th>Event</th>
-          <th>Aircraft</th>
-          <th>Region</th>
-          <th>Value</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-        {events.slice(0, 100).map((event) => (
-          <tr key={event.event_id}>
-            <td>{formatDateTime(event.event_time)}</td>
-            <td>
-              <span className="event-type-badge">
-                {formatEventType(event.event_type)}
-              </span>
-            </td>
-            <td>{event.aircraft_hex || '—'}</td>
-            <td>{formatRegionName(event.region_code)}</td>
-            <td>
-              {event.event_value === null ||
-              event.event_value === undefined
-                ? '—'
-                : formatDecimal(event.event_value)}
-            </td>
-            <td className="event-description">
-              {event.event_description || '—'}
-            </td>
+    <>
+      <TableSearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Search aircraft or event description…"
+      />
+
+      <DataTable>
+        <thead>
+          <tr>
+            <SortableTh
+              label="Time"
+              sortKeyName="event_time"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <th>Event</th>
+            <th>Aircraft</th>
+            <th>Region</th>
+            <SortableTh
+              label="Value"
+              sortKeyName="event_value"
+              sortKey={sortKey}
+              direction={direction}
+              onSort={toggleSort}
+            />
+            <th>Description</th>
           </tr>
-        ))}
-      </tbody>
-    </DataTable>
+        </thead>
+        <tbody>
+          {sorted.length === 0 && (
+            <tr>
+              <td colSpan={6} className="table-empty-row">
+                No events match “{search}”.
+              </td>
+            </tr>
+          )}
+
+          {sorted.slice(0, 100).map((event) => (
+            <tr
+              key={event.event_id}
+              className={
+                eventSeverity[event.event_type] === 'danger'
+                  ? 'event-row severity-danger'
+                  : eventSeverity[event.event_type] === 'notice'
+                    ? 'event-row severity-notice'
+                    : 'event-row'
+              }
+            >
+              <td>{formatDateTime(event.event_time)}</td>
+              <td>
+                <span
+                  className={`event-type-badge severity-${
+                    eventSeverity[event.event_type] || 'info'
+                  }`}
+                >
+                  {formatEventType(event.event_type)}
+                </span>
+              </td>
+              <td>{event.aircraft_hex || '—'}</td>
+              <td>{formatRegionName(event.region_code)}</td>
+              <td>
+                {event.event_value === null ||
+                event.event_value === undefined
+                  ? '—'
+                  : formatDecimal(event.event_value)}
+              </td>
+              <td className="event-description">
+                {event.event_description || '—'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </DataTable>
+    </>
   )
 }
 
@@ -1685,7 +1903,7 @@ function RegionalTooltip({ active, payload, label }) {
     <div className="chart-tooltip">
       <strong>{formatRegionName(label)}</strong>
       <span>
-        Positions: {formatNumber(payload[0]?.value)}
+        Aircraft: {formatNumber(payload[0]?.value)}
       </span>
     </div>
   )

@@ -1,8 +1,8 @@
+name: flight-analytics-deploy
 services:
 
   redpanda:
     image: redpandadata/redpanda:v24.3.9
-    container_name: flight-analytics-redpanda-deploy
     command:
       - redpanda
       - start
@@ -35,7 +35,6 @@ services:
 
   postgres:
     image: postgres:16
-    container_name: flight-analytics-postgres-deploy
     environment:
       POSTGRES_DB: flight_analytics
       POSTGRES_USER: flight_analytics
@@ -46,7 +45,6 @@ services:
 
   api:
     image: flight-analytics-app:test
-    container_name: flight-analytics-api-deploy
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
@@ -57,11 +55,10 @@ services:
     depends_on:
       - postgres
     ports:
-      - "8000:8000"
+      - "8001:8000"
 
   producer:
     image: flight-analytics-app:test
-    container_name: flight-analytics-producer-deploy
     environment:
       REDPANDA_BROKER: redpanda:9092
       KAFKA_TOPIC: aircraft-observations
@@ -75,7 +72,6 @@ services:
 
   processor:
     image: flight-analytics-app:test
-    container_name: flight-analytics-processor-deploy
     environment:
       REDPANDA_BROKER: redpanda:9092
       KAFKA_TOPIC: aircraft-observations
